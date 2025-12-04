@@ -1,7 +1,6 @@
 import streamlit as st
 from langchain_openai import ChatOpenAI
-from langchain.chains.conversation.base import ConversationChain
-from langchain.memory import ConversationBufferMemory
+from langchain_core.messages import HumanMessage, AIMessage
 import os
 
 # Load API key
@@ -14,23 +13,26 @@ st.title("🤖 My Chatbot")
 llm = ChatOpenAI(model="gpt-4o-mini")
 
 # Initialize memory in session_state
-if "memory" not in st.session_state:
-    st.session_state.memory = ConversationBufferMemory()
-
-conversation = ConversationChain(
-    llm=llm,
-    memory=st.session_state.memory
-)
+if "chat_history" not in st.session_state:
+    st.session_state.chat_history = []
 
 user_input = st.text_input("Savolingizni kiriting:")
 
 if st.button("Yuborish") and user_input.strip():
-    response = conversation.predict(input=user_input)
-    st.write("### 🧑 Siz:")
-    st.write(user_input)
+    messages = []
+    for role, content in st.session_state.chat_history:
+        messages.append(HumanMessage(content=content) if role == "user" else AIMessage(content=content))
+    messages.append(HumanMessage(content=user_input))
 
-    st.write("### 🤖 Bot:")
-    st.write(response)
+    response = llm.invoke(messages)
+
+    st.session_state.chat_history.append(("user", user_input))
+    st.session_state.chat_history.append(("assistant", response.content))
+
+for role, content in st.session_state.chat_history:
+    header = "### 🧑 Siz:" if role == "user" else "### 🤖 Bot:"
+    st.write(header)
+    st.write(content)
 
 if st.checkbox("Show memory"):
-    st.write(st.session_state.memory.buffer)
+    st.write(st.session_state.chat_history)
