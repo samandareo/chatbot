@@ -1,6 +1,5 @@
 import streamlit as st
 from langchain_openai import ChatOpenAI
-from langchain_community.memory import ConversationBufferMemory
 from langchain_core.messages import HumanMessage, AIMessage
 import os
 
@@ -18,6 +17,27 @@ try:
 except:
     st.error("❌ OpenAI API key not found in secrets. Please add it to continue.")
     st.stop()
+
+# Custom ConversationBufferMemory class
+class ConversationBufferMemory:
+    def __init__(self):
+        self.messages = []
+    
+    def add_user_message(self, message):
+        self.messages.append(HumanMessage(content=message))
+    
+    def add_ai_message(self, message):
+        self.messages.append(AIMessage(content=message))
+    
+    def get_messages(self):
+        return self.messages
+    
+    def clear(self):
+        self.messages = []
+    
+    def get_buffer(self):
+        return "\n".join([f"Human: {msg.content}" if isinstance(msg, HumanMessage) 
+                         else f"AI: {msg.content}" for msg in self.messages])
 
 # Sidebar for controls
 with st.sidebar:
@@ -51,7 +71,7 @@ with st.sidebar:
     
     # Clear chat button
     if st.button("🗑️ Clear Chat", use_container_width=True):
-        st.session_state.memory = ConversationBufferMemory(return_messages=True)
+        st.session_state.memory.clear()
         st.session_state.messages = []
         st.rerun()
     
@@ -71,7 +91,7 @@ llm = get_llm(model_name, temperature, max_tokens)
 
 # Initialize memory and messages in session state
 if "memory" not in st.session_state:
-    st.session_state.memory = ConversationBufferMemory(return_messages=True)
+    st.session_state.memory = ConversationBufferMemory()
 
 if "messages" not in st.session_state:
     st.session_state.messages = []
@@ -102,35 +122,25 @@ if user_input:
     with st.chat_message("assistant"):
         with st.spinner("Javob tayyorlanmoqda..."):
             try:
-                # Get conversation history from memory
-                memory_variables = st.session_state.memory.load_memory_variables({})
-                history = memory_variables.get('history', [])
+                # Add user message to memory
+                st.session_state.memory.add_user_message(user_input)
                 
-                # Prepare messages for the LLM
-                messages = history + [{"role": "user", "content": user_input}]
+                # Get all messages from memory for context
+                context_messages = st.session_state.memory.get_messages()
                 
                 # Get response from LLM
-                response = llm.invoke([
-                    {"role": msg.get("role", "human" if isinstance(msg, dict) and msg.get("role") == "user" else "ai"), 
-                     "content": msg.get("content", str(msg))}
-                    if isinstance(msg, dict) else 
-                    {"role": "human" if "Human" in str(type(msg)) else "ai", "content": str(msg)}
-                    for msg in (messages if isinstance(messages, list) else [messages])
-                ])
+                response = llm.invoke(context_messages)
                 
                 # Extract content from response
-                response_content = response.content if hasattr(response, 'content') else str(response)
+                response_content = response.content
                 
                 # Display response
                 st.markdown(response_content)
                 
-                # Save to memory
-                st.session_state.memory.save_context(
-                    {"input": user_input},
-                    {"output": response_content}
-                )
+                # Add AI response to memory
+                st.session_state.memory.add_ai_message(response_content)
                 
-                # Add to session messages
+                # Add to session messages for display
                 st.session_state.messages.append({
                     "role": "assistant", 
                     "content": response_content
@@ -145,11 +155,19 @@ if show_memory:
     st.subheader("🧠 Memory Details")
     
     with st.expander("Conversation Buffer Memory"):
-        memory_vars = st.session_state.memory.load_memory_variables({})
-        st.json(memory_vars, expanded=False)
+        st.text(st.session_state.memory.get_buffer())
     
     with st.expander("Session Messages"):
         st.json(st.session_state.messages, expanded=False)
+    
+    with st.expander("LangChain Messages"):
+        messages_data = []
+        for msg in st.session_state.memory.get_messages():
+            messages_data.append({
+                "type": type(msg).__name__,
+                "content": msg.content
+            })
+        st.json(messages_data, expanded=False)
 
 # Footer
 st.markdown("---")
