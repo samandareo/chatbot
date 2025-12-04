@@ -1,7 +1,7 @@
 import streamlit as st
 from langchain_openai import ChatOpenAI
-from langchain.core import ConversationBufferMemory
-from langchain.schema import BaseMessage
+from langchain_community.memory import ConversationBufferMemory
+from langchain_core.messages import HumanMessage, AIMessage
 import os
 
 # Page configuration
